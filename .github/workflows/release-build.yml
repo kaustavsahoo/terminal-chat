@@ -36,12 +36,13 @@ jobs:
           override: true
 
       - name: Add target (if needed)
+        shell: bash
         run: |
           rustup target add ${{ matrix.target }} || true
 
       - name: Build release
+        shell: bash
         run: |
-          set -e
           cargo build --release --target ${{ matrix.target }}
 
       - name: Strip binary (non-windows)
