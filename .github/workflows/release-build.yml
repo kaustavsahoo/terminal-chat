@@ -1,0 +1,79 @@
+name: Release artifacts
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-release:
+    name: Build release artifacts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: terminal-chat-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: terminal-chat-macos-arm64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: terminal-chat-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: terminal-chat-windows-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Add target (if needed)
+        run: |
+          rustup target add ${{ matrix.target }} || true
+
+      - name: Build release
+        run: |
+          set -e
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binary (non-windows)
+        if: matrix.os != 'windows-latest'
+        run: |
+          strip target/${{ matrix.target }}/release/terminal-chat || strip target/release/terminal-chat || true
+
+      - name: Prepare artifact (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          if [ -f target/${{ matrix.target }}/release/terminal-chat ]; then
+            cp target/${{ matrix.target }}/release/terminal-chat dist/${{ matrix.artifact }}
+          elif [ -f target/release/terminal-chat ]; then
+            cp target/release/terminal-chat dist/${{ matrix.artifact }}
+          else
+            echo "Binary not found"
+            exit 1
+          fi
+
+      - name: Prepare artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $src = "target\${{ matrix.target }}\release\terminal-chat.exe"
+          if (-Not (Test-Path $src)) { $src = "target\release\terminal-chat.exe" }
+          if (-Not (Test-Path $src)) { Write-Error 'Binary not found'; exit 1 }
+          Copy-Item -Path $src -Destination (Join-Path dist "${{ matrix.artifact }}.exe") -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
